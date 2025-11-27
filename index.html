@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Kids Safe YouTube — Custom Player</title>
+  <meta http-equiv="Permissions-Policy" content="
+    autoplay=*, 
+    encrypted-media=*, 
+    accelerometer=*, 
+    gyroscope=*, 
+    picture-in-picture=*,
+    clipboard-write=*,
+    web-share=*">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    /* ---------- Base ---------- */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f7f7f7;
+      line-height: 1.4;
+      -webkit-touch-callout: none; /* iOS: disable long-press menu */
+    }
+    header {
+      background: #ff5252;
+      padding: 15px 10px;
+      color: #fff;
+      font-size: 24px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .container {
+      padding: 15px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h2, h3 { margin: 10px 0; color: #333; }
+
+    /* grid & cards */
+    .grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+    }
+    .card {
+      width: 100%;
+      max-width: 280px;
+      background: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      text-align: center;
+      transition: transform 0.2s;
+    }
+    .card:hover { transform: scale(1.03); }
+    .card img { width: 100%; border-radius: 5px; object-fit: cover; }
+    .card h3 { font-size: 16px; margin: 8px 0; height: 44px; overflow: hidden; }
+
+    /* buttons / inputs */
+    button {
+      padding: 12px 18px;
+      margin-top: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      background: #ff5252;
+      color: #fff;
+      width: 100%;
+      max-width: 200px;
+      transition: background 0.2s;
+    }
+    button:hover { background: #e04343; }
+    .small-btn { padding: 8px 12px; max-width: 120px; font-size: 14px; }
+
+    #adminPanel, #kidsView, #shutdownScreen { display: none; }
+    #shutdownScreen {
+      font-size: 32px; text-align: center; margin-top: 80px; color: red; padding: 10px;
+    }
+    .input {
+      padding: 10px; width: 100%; margin: 5px 0 10px 0; border-radius: 6px; border: 1px solid #ccc; font-size: 16px;
+    }
+    .row { margin-bottom: 20px; }
+
+    /* player & click blocker */
+    #playerContainer {
+      position: relative;
+      margin-top: 10px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: black;
+      width: 100%;
+      max-width: 800px;
+      height: 450px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+      margin-left: auto;
+      margin-right: auto;
+      touch-action: pan-y; /* allow vertical scroll while using horizontal swipe detection programmatically */
+      -ms-touch-action: pan-y;
+    }
+    #clickBlocker {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 10;
+      pointer-events: none; /* activated only during playback */
+    }
+    /* default player element */
+    #player { width: 100%; height: 100%; background: black; color: white; display:flex; align-items:center; justify-content:center; }
+
+    /* custom controls (YouTube-like dark theme) */
+    .controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 40; /* above overlay and clickBlocker */
+      background: linear-gradient(to top, rgba(0,0,0,0.65), rgba(0,0,0,0.25) 30%, rgba(0,0,0,0));
+      padding: 10px 12px;
+      box-sizing: border-box;
+      transition: opacity 180ms ease, transform 180ms ease;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .controls.hidden { opacity: 0; transform: translateY(8px); pointer-events: none; }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-plain {
+      background: transparent; border: none; color: #fff; font-size: 18px; cursor: pointer; padding: 6px;
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 6px;
+    }
+    .btn-plain:active { transform: scale(0.98); }
+
+    .time {
+      color: #ddd; font-size: 13px; min-width: 60px; text-align: center;
+    }
+
+    /* --- UPGRADED SEEK BAR (Thicker + Modern Colors) --- */
+.seek {
+  position: relative;
+  height: 12px; /* 🔥 THICKER */
+  background: rgba(255,255,255,0.10); /* subtle dark grey */
+  border-radius: 6px;
+  flex: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  margin-top: 2px;
+}
+
+/* buffered portion */
+.seek .buffered {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  width: 0%;
+  background: rgba(255,255,255,0.30); /* brighter gray for buffer */
+  border-radius: 6px;
+  z-index: 1;
+  transition: width 0.2s linear;
+}
+
+/* played progress */
+.seek .progress {
+  position: relative;
+  height: 100%;
+  width: 0%;
+  background: #4FC3F7; /* 🔵 NEW cyan progress */
+  border-radius: 6px;
+  z-index: 2;
+  transition: width 140ms linear;
+}
+
+/* draggable thumb */
+.seek .thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;          /* 🔥 bigger thumb */
+  height: 18px;
+  background: #00BCD4;  /* cyan thumb */
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  z-index: 3;
+  touch-action: none;
+  transition: background 150ms, transform 130ms ease;
+}
+
+/* enlarged thumb while dragging */
+.seek.dragging .thumb {
+  background: #80DEEA; /* lighter cyan while held */
+  transform: translate(-50%, -50%) scale(1.18);
+}
+
+    /* center big overlay play button */
+    .center-play {
+      position: absolute;
+      z-index: 35;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 84px; height: 84px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.45);
+      display: flex; align-items:center; justify-content:center;
+      color: #fff; font-size: 36px;
+      transition: opacity 160ms ease, transform 160ms ease;
+      cursor: pointer;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    }
+    .center-play.hidden { opacity: 0; transform: translate(-50%, -50%) scale(0.96); pointer-events: none; }
+
+    /* overlay current index */
+    #playerOverlay {
+      /* position: absolute;
+      bottom: 60px;
+      left: 10px;
+      z-index: 45;
+      background: rgba(0,0,0,0.5);
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 14px; */
+        display: none !important;
+
+    }
+
+    /* pagination controls container */
+    .pagination-controls {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    /* responsive: player ALWAYS above list (Option D) */
+    #kidsView { display: block; }
+    .list-wrap { margin-top: 16px; }
+
+    @media (min-width: 480px) {
+      .grid { justify-content: flex-start; }
+      .card { flex: 1 1 calc(50% - 20px); }
+    }
+    @media (min-width: 768px) {
+      .card { flex: 1 1 calc(33.33% - 20px); }
+    }
+
+    /* Landscape handling for small screens - expand player to near fullscreen */
+    @media screen and (orientation: landscape) and (max-width: 900px) {
+      #playerContainer {
+        height: 100vh;
+        max-width: none;
+        border-radius: 0;
+      }
+      .list-wrap { height: 40vh; overflow-y: auto; }
+      .card { max-width: 45%; }
+      body { overscroll-behavior-y: none; } /* keep stable */
+    }
+
+    /* small visual tweaks for pagination buttons */
+    .page-btn {
+      padding: 8px 12px;
+      background: #fff;
+      color: #333;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      cursor: pointer;
+    }
+    .page-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* accessibility focus */
+    .btn-plain:focus { outline: 2px solid rgba(255,82,82,0.6); outline-offset: 2px; }
+  </style>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- YouTube IFrame Player API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body>
+  <header>Kids Safe YouTube</header>
+
+  <div class="container">
+
+    <!-- Login -->
+    <div id="loginScreen">
+      <h2>Choose Mode</h2>
+      <button onclick="login('admin')">Parent Login</button>
+      <button onclick="login('kid')">Kids Mode</button>
+    </div>
+
+    <!-- Shutdown -->
+    <div id="shutdownScreen">Viewing paused by parent.</div>
+
+    <!-- Kids View -->
+    <div id="kidsView" aria-live="polite">
+      <h2>Approved Videos</h2>
+
+      <!-- Player ALWAYS above list (Option D) -->
+      <div id="playerContainer" aria-label="Video player">
+        <div id="clickBlocker"></div>
+
+        <!-- player will be injected into this element -->
+        <div id="player">
+          <p style="color:white; text-align:center;">Select a video to watch</p>
+        </div>
+
+        <!-- Center floating play/pause -->
+        <button id="centerPlay" class="center-play" aria-label="Play" title="Play/Pause">▶</button>
+
+        <!-- overlay index -->
+        <div id="playerOverlay" style="display:none;"></div>
+
+        <!-- Custom controls (dark theme) -->
+        <div id="controls" class="controls">
+          <div class="seek" id="seekBar" aria-label="Seek bar" role="slider" tabindex="0">
+            <div class="buffered" id="bufferedBar"></div>
+            <div class="progress" id="progressBar"></div>
+            <div class="thumb" id="seekThumb" style="left:0%"></div>
+          </div>
+
+          <div class="controls-row">
+            <button id="prevBtn" class="btn-plain" title="Previous" aria-label="Previous">⏮</button>
+            <button id="playBtn" class="btn-plain" title="Play/Pause" aria-label="Play">▶</button>
+            <button id="muteBtn" class="btn-plain" title="Mute/Unmute" aria-label="Mute">🔊</button>
+
+            <div class="time" id="currentTime">0:00</div>
+
+            <div style="flex:1"></div>
+
+            <div class="time" id="durationTime">0:00</div>
+            <button id="fsBtn" class="btn-plain" title="Fullscreen" aria-label="Fullscreen">⛶</button>
+            <button id="nextBtn" class="btn-plain" title="Next" aria-label="Next">⏭</button>
+           
+
+          </div>
+        </div>
+         <button id="skipAdBtn" style="position:absolute;top:10px;right:10px;z-index:50;display:none;">
+  Skip Ad
+</button>
+      </div>
+
+      <div class="list-wrap">
+        <div id="kidsGrid" class="grid" aria-label="Videos list"></div>
+
+        <div class="pagination-controls" id="paginationControls" style="display:none;">
+          <button class="page-btn" id="prevPageBtn" onclick="prevPage()">Previous</button>
+          <span id="pageInfo">1 / 1</span>
+          <button class="page-btn" id="nextPageBtn" onclick="nextPage()">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="adminPanel">
+      <h2>Parent Dashboard</h2>
+
+      <div class="row">
+        <h3>Add Approved Video</h3>
+        <input id="videoURL" class="input" placeholder="Paste YouTube URL">
+        <button onclick="addVideo()">Add Video</button>
+      </div>
+
+      <div class="row">
+        <h3>Shorts Control</h3>
+        <label><input type="checkbox" id="shortsToggle" onchange="toggleShorts()"> Allow Shorts</label>
+      </div>
+
+      <div class="row">
+        <h3>Time Limit (videos/day)</h3>
+        <input id="timeLimit" class="input" placeholder="Max videos per day">
+        <button onclick="setTimeLimit()">Save Limit</button>
+      </div>
+
+      <div class="row">
+        <h3>Remote Shutdown</h3>
+        <button onclick="shutdown()">Shutdown Kids Screen</button>
+        <button onclick="reactivate()">Reactivate</button>
+      </div>
+
+      <div class="row">
+        <h3>Approved Videos</h3>
+        <div id="adminList"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    /* =================== Firebase config =================== */
+    const firebaseConfig = {
+      apiKey: "AIzaSyB5QL5b9VitYEKzFHNCH6xwV0hSqyiTPrY",
+      authDomain: "kidssafeyt.firebaseapp.com",
+      databaseURL: "https://kidssafeyt-default-rtdb.asia-southeast1.firebasedatabase.app/",
+      projectId: "kidssafeyt"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    /* =================== App state =================== */
+    let data = { videos: [], allowShorts: false, shutdown: false, timeLimit: 0, watchedToday: 0 };
+    let filteredVideos = [];      // videos after applying shorts filter
+    let currentPage = 1;
+    const itemsPerPage = 6;
+
+    let player = null;
+    let currentVideoGlobalIndex = -1; // index in filteredVideos array
+
+    let progressTimer = null; // interval to update progress
+    let isDraggingSeek = false;
+    let seekRect = null;
+    let dragDisabledSwipe = false;
+
+    /* swipe detection */
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchMoved = false;
+    const SWIPE_THRESHOLD = 60; // px
+
+    /* =================== Helpers =================== */
+    function extractVideoId(url){
+      if(!url) return null;
+      const patterns = [/v=([^&]+)/, /youtu\.be\/([^?&]+)/, /embed\/([^?&]+)/, /youtube.com\/shorts\/([^?&]+)/];
+      for(const p of patterns){
+        const m = url.match(p);
+        if(m) return m[1];
+      }
+      if(/^[a-zA-Z0-9_-]{8,}$/.test(url)) return url; // maybe ID only
+      return null;
+    }
+    function escapeHtml(text){
+      if(!text) return "";
+      return text.replace(/[&<>"']/g, function(m){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]; });
+    }
+    function formatTime(sec){
+      if(!isFinite(sec) || sec < 0) return "0:00";
+      sec = Math.floor(sec);
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${m}:${s.toString().padStart(2,'0')}`;
+    }
+
+    /* =================== MISSING: updateOverlay (added) =================== */
+    function updateOverlay(){
+      // Ensure controls and overlay reflect the current player state
+      try {
+        updateControlsState();
+      } catch(e){ /* ignore */ }
+
+      const overlay = document.getElementById('playerOverlay');
+      const center = document.getElementById('centerPlay');
+      const ctrl = document.getElementById('controls');
+
+      if(!overlay || !center || !ctrl) return;
+
+      // update overlay text (index)
+      if(currentVideoGlobalIndex >= 0 && filteredVideos[currentVideoGlobalIndex]){
+        overlay.style.display = 'block';
+        overlay.textContent = `Playing ${currentVideoGlobalIndex + 1} of ${filteredVideos.length}`;
+      } else {
+        overlay.style.display = 'none';
+      }
+
+      // show center play if paused or no video
+      if(player && typeof player.getPlayerState === 'function'){
+        const st = player.getPlayerState();
+        if(st === YT.PlayerState.PLAYING){
+          center.classList.add('hidden');
+        } else {
+          center.classList.remove('hidden');
+        }
+      } else {
+        center.classList.remove('hidden');
+      }
+
+      // ensure controls visible briefly
+      ctrl.classList.remove('hidden');
+      // schedule hide if playing
+      if(typeof controlsHideTimer !== 'undefined' && controlsHideTimer) clearTimeout(controlsHideTimer);
+      window.controlsHideTimer = setTimeout(()=>{
+        if(player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING){
+          ctrl.classList.add('hidden');
+          center.classList.add('hidden');
+        }
+      }, 3000);
+    }
+
+    /* =================== Login & DB listeners =================== */
+    function login(role){
+      document.getElementById("loginScreen").style.display = "none";
+      if(role === "admin"){
+        document.getElementById("adminPanel").style.display = "block";
+        loadAdmin();
+      } else {
+        db.ref('shutdown').on('value', snap => {
+          data.shutdown = snap.val();
+          if(data.shutdown) showShutdown();
+          else {
+            document.getElementById("shutdownScreen").style.display = "none";
+            document.getElementById("kidsView").style.display = "block";
+            loadKidsFromState();
+          }
+        });
+        db.ref('videos').on('value', snap => {
+          data.videos = snap.val() || [];
+          loadKidsFromState();
+          loadAdmin();
+        });
+        db.ref('allowShorts').on('value', snap => {
+          data.allowShorts = snap.val() || false;
+          loadKidsFromState();
+        });
+        db.ref('timeLimit').on('value', snap => {
+          data.timeLimit = snap.val() || 0;
+        });
+      }
+    }
+
+    /* =================== Admin actions =================== */
+    function addVideo(){
+      const url = document.getElementById("videoURL").value.trim();
+      const id = extractVideoId(url);
+      if(!id) return alert("Invalid YouTube URL or ID");
+
+      const thumb = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+      fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${id}&format=json`)
+        .then(res => { if(!res.ok) throw new Error("oembed"); return res.json(); })
+        .then(meta => {
+          db.ref('videos').once('value').then(snap => {
+            const vids = snap.val() || [];
+            vids.push({ id: id, title: meta.title, thumbnail: thumb, duration: 200 });
+            db.ref('videos').set(vids);
+            document.getElementById("videoURL").value = "";
+            loadAdmin();
+            alert("Video added!");
+          });
+        })
+        .catch(e=>{
+          console.warn(e);
+          alert("Cannot fetch video details. Adding with fallback title.");
+          db.ref('videos').once('value').then(snap => {
+            const vids = snap.val() || [];
+            vids.push({ id: id, title: id, thumbnail: thumb, duration: 200 });
+            db.ref('videos').set(vids);
+            document.getElementById("videoURL").value = "";
+            loadAdmin();
+          });
+        });
+    }
+    function toggleShorts(){ db.ref('allowShorts').set(document.getElementById("shortsToggle").checked); }
+    function setTimeLimit(){ db.ref('timeLimit').set(Number(document.getElementById("timeLimit").value || 0)); alert("Time limit saved!"); }
+    function shutdown(){ db.ref('shutdown').set(true); alert("Kids screen paused!"); }
+    function reactivate(){ db.ref('shutdown').set(false); alert("Kids screen reactivated!"); }
+
+    function loadAdmin(){
+      db.ref('videos').once('value').then(snap => {
+        const vids = snap.val() || [];
+        let html = "";
+        vids.forEach((v,i) => {
+          html += `<div style="margin-bottom:8px;">${escapeHtml(v.title)} (${v.duration || 0}s)
+                    <button class="small-btn" style="margin-left:8px;" onclick="deleteVideo(${i})">Delete</button>
+                   </div>`;
+        });
+        document.getElementById("adminList").innerHTML = html;
+        document.getElementById("shortsToggle").checked = data.allowShorts || false;
+        document.getElementById("timeLimit").value = data.timeLimit || 0;
+      });
+    }
+    function deleteVideo(index){
+      db.ref('videos').once('value').then(snap => {
+        const vids = snap.val() || [];
+        if(index >= 0 && index < vids.length){
+          vids.splice(index,1);
+          db.ref('videos').set(vids);
+        }
+      });
+    }
+
+    /* =================== Kids list + pagination =================== */
+    function loadKidsFromState(){
+      if(data.shutdown) return;
+      filteredVideos = (data.videos || []).slice();
+      if(!data.allowShorts){
+        filteredVideos = filteredVideos.filter(v => (v.duration || 999) >= 60);
+      }
+      const totalPages = Math.max(1, Math.ceil(filteredVideos.length / itemsPerPage));
+      if(currentPage > totalPages) currentPage = totalPages;
+      if(currentPage < 1) currentPage = 1;
+      renderKidsGrid();
+      updateOverlay();
+    }
+    function renderKidsGrid(){
+      const grid = document.getElementById("kidsGrid");
+      grid.innerHTML = "";
+      const start = (currentPage - 1) * itemsPerPage;
+      const pageVideos = filteredVideos.slice(start, start + itemsPerPage);
+      pageVideos.forEach((v, idx) => {
+        const globalIndex = start + idx;
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <img src="${escapeHtml(v.thumbnail)}" alt="${escapeHtml(v.title)}">
+          <h3>${escapeHtml(v.title)}</h3>
+          <button onclick="playByIndex(${globalIndex})">Watch</button>
+        `;
+        grid.appendChild(card);
+      });
+      renderPaginationControls();
+    }
+    function renderPaginationControls(){
+      const controls = document.getElementById("paginationControls");
+      const pageInfo = document.getElementById("pageInfo");
+      const prevBtn = document.getElementById("prevPageBtn");
+      const nextBtn = document.getElementById("nextPageBtn");
+      const totalPages = Math.max(1, Math.ceil(filteredVideos.length / itemsPerPage));
+      pageInfo.textContent = `${currentPage} / ${totalPages}`;
+      prevBtn.disabled = (currentPage <= 1);
+      nextBtn.disabled = (currentPage >= totalPages);
+      controls.style.display = (filteredVideos.length > itemsPerPage) ? "flex" : "none";
+    }
+    function nextPage(){ const totalPages = Math.max(1, Math.ceil(filteredVideos.length / itemsPerPage)); if(currentPage < totalPages) { currentPage++; renderKidsGrid(); scrollToPlayerTop(); } }
+    function prevPage(){ if(currentPage > 1) { currentPage--; renderKidsGrid(); scrollToPlayerTop(); } }
+    function scrollToPlayerTop(){ const pc = document.getElementById('playerContainer'); if(pc) pc.scrollIntoView({behavior:'smooth', block:'start'}); }
+
+    /* =================== Player creation & controls wiring =================== */
+    function onYouTubeIframeAPIReady(){ /* placeholder; players created dynamically */ }
+
+    function playByIndex(index){
+      if(index < 0 || index >= filteredVideos.length) return;
+      if(data.timeLimit>0 && data.watchedToday >= data.timeLimit){ alert("Time limit reached"); return; }
+      const id = filteredVideos[index].id;
+      currentVideoGlobalIndex = index;
+      play(id);
+      updateOverlay();
+      ensureVisiblePageForIndex(index);
+    }
+
+    function play(videoId){
+      const playerContainer = document.getElementById("playerContainer");
+
+      // remove any message and recreate the player element
+      const oldMsg = playerContainer.querySelector('p');
+      if(oldMsg) oldMsg.remove();
+      playerContainer.querySelector('#player')?.remove();
+      const playerDiv = document.createElement('div');
+      playerDiv.id = 'player';
+      playerDiv.setAttribute('allowfullscreen', 'true'); // MUST have this for mobile
+      playerContainer.insertBefore(playerDiv, document.getElementById('centerPlay'));
+
+      const newClickBlocker = playerContainer.querySelector('#clickBlocker');
+      if(newClickBlocker) newClickBlocker.style.pointerEvents = 'none';
+
+      if(player && typeof player.destroy === 'function'){ try{ player.destroy(); } catch(e){} }
+      player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: videoId,
+        playerVars: {
+          rel: 0, modestbranding: 1, controls: 0 /* hide native controls */, iv_load_policy: 3, fs: 1, playsinline: 1, autoplay: 0
+        },
+        events: {
+          'onReady': (event) => {
+            // play immediately (autoplay may be blocked by browser if not triggered by user)
+            try { event.target.unMute(); } catch(e){}
+            try { event.target.playVideo(); } catch(e){}
+            if(newClickBlocker) newClickBlocker.style.pointerEvents = 'auto';
+            data.watchedToday = (data.watchedToday || 0) + 1;
+            startProgressTimer();
+            updateControlsState();
+            updateOverlay();
+          },
+          'onStateChange': (ev) => {
+            updateControlsState();
+            if(ev.data === YT.PlayerState.ENDED){
+              stopProgressTimer();
+              const pc = document.getElementById("playerContainer");
+              // show "ended" message
+              pc.querySelector('#player')?.remove();
+              const msg = document.createElement("p");
+              msg.style.color = "white";
+              msg.style.textAlign = "center";
+              msg.style.paddingTop = "200px";
+              msg.textContent = "Video ended. Please select another video.";
+              pc.insertBefore(msg, document.getElementById('centerPlay'));
+              updateOverlay();
+            } else if(ev.data === YT.PlayerState.PLAYING){
+              startProgressTimer();
+            } else if(ev.data === YT.PlayerState.PAUSED){
+              stopProgressTimer();
+            }
+          }
+        }
+      });
+    }
+
+    /* progress / UI update */
+    function startProgressTimer(){
+      stopProgressTimer();
+      progressTimer = setInterval(()=> {
+        try { updateProgressUI(); } catch(e){}
+      }, 250);
+    }
+    function stopProgressTimer(){ if(progressTimer) { clearInterval(progressTimer); progressTimer = null; } }
+
+    function updateProgressUI(){
+      if(!player || typeof player.getDuration !== 'function') return;
+      const dur = player.getDuration();
+      const cur = player.getCurrentTime();
+      // buffered
+      let bufferedPercent = 0;
+      try {
+        const vt = player.getVideoLoadedFraction();
+        if(isFinite(vt)) bufferedPercent = Math.min(1, vt) * 100;
+      } catch(e){ bufferedPercent = 0; }
+      const prog = (isFinite(dur) && dur > 0) ? Math.max(0, Math.min(1, cur / dur)) * 100 : 0;
+      document.getElementById('progressBar').style.width = `${prog}%`;
+      document.getElementById('bufferedBar').style.width = `${bufferedPercent}%`;
+      const thumb = document.getElementById('seekThumb');
+      if(thumb) thumb.style.left = `${prog}%`;
+      const curElem = document.getElementById('currentTime');
+      const durElem = document.getElementById('durationTime');
+      if(curElem) curElem.textContent = formatTime(cur);
+      if(durElem) durElem.textContent = formatTime(dur);
+    }
+
+    function updateControlsState(){
+      const playBtn = document.getElementById('playBtn');
+      const centerPlay = document.getElementById('centerPlay');
+      const muteBtn = document.getElementById('muteBtn');
+
+      if(!player || typeof player.getPlayerState !== 'function'){
+        if(playBtn) playBtn.textContent = '▶';
+        if(centerPlay) centerPlay.textContent = '▶';
+        return;
+      }
+      const st = player.getPlayerState();
+      if(st === YT.PlayerState.PLAYING){
+        if(playBtn) playBtn.textContent = '⏸';
+        if(centerPlay) centerPlay.textContent = '⏸';
+      } else {
+        if(playBtn) playBtn.textContent = '▶';
+        if(centerPlay) centerPlay.textContent = '▶';
+      }
+      // mute state
+      try {
+        if(player.isMuted && typeof player.isMuted === 'function' ? player.isMuted() : false){
+          if(muteBtn) muteBtn.textContent = '🔇';
+        } else {
+          if(muteBtn) muteBtn.textContent = '🔊';
+        }
+      } catch(e){}
+    }
+
+    /* controls actions */
+    function togglePlayPause(){
+      if(!player || typeof player.getPlayerState !== 'function') return;
+      const st = player.getPlayerState();
+      if(st === YT.PlayerState.PLAYING){
+        player.pauseVideo();
+      } else {
+        player.playVideo();
+      }
+      updateControlsState();
+    }
+    function toggleMute(){
+      if(!player) return;
+      try {
+        if(player.isMuted && player.isMuted()){
+          player.unMute();
+        } else {
+          player.mute();
+        }
+      } catch(e){}
+      updateControlsState();
+    }
+    function playPrev(){
+      prevVideoAuto();
+    }
+    function playNext(){
+      nextVideoAuto();
+    }
+    // function toggleFullscreen(){
+    //   const el = document.getElementById('playerContainer');
+    //   if(!document.fullscreenElement && !document.webkitFullscreenElement){
+    //     if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+    //     else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    //   } else {
+    //     if(document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+    //     else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    //   }
+    // }
+
+    function toggleFullscreen() {
+    const el = document.getElementById('playerContainer');
+    if (!el) return;
+
+    // Detect current fullscreen state
+    const isFullscreen =
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        document.msFullscreenElement;
+
+    if (!isFullscreen) {
+        // Request fullscreen
+        if (el.requestFullscreen) {
+            el.requestFullscreen().catch(() => {});
+        } else if (el.webkitRequestFullscreen) { // Safari iOS/desktop
+            el.webkitRequestFullscreen();
+        } else if (el.msRequestFullscreen) { // IE/Edge
+            el.msRequestFullscreen();
+        }
+    } else {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+            document.msExitFullscreen();
+        }
+    }
+}
+
+
+    /* seek handling (pointer + touch friendly) */
+    function initSeekInteractions(){
+      const seek = document.getElementById('seekBar');
+      const thumb = document.getElementById('seekThumb');
+
+      function getSeekInfo(clientX){
+        if(!seekRect) seekRect = seek.getBoundingClientRect();
+        const x = clientX - seekRect.left;
+        const pct = Math.max(0, Math.min(1, x / seekRect.width));
+        return { pct, x };
+      }
+
+      function onPointerDown(e){
+        isDraggingSeek = true;
+        dragDisabledSwipe = true;
+        seekRect = seek.getBoundingClientRect();
+        seek.classList.add('dragging');
+        document.body.style.userSelect = 'none';
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const info = getSeekInfo(clientX);
+        updateThumbByPct(info.pct);
+      }
+
+      function onPointerMove(e){
+        if(!isDraggingSeek) return;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const info = getSeekInfo(clientX);
+        updateThumbByPct(info.pct);
+      }
+
+      function onPointerUp(e){
+        if(!isDraggingSeek) return;
+        isDraggingSeek = false;
+        seek.classList.remove('dragging');
+        document.body.style.userSelect = '';
+        const clientX = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientX : (e.clientX || touchStartX);
+        const info = getSeekInfo(clientX);
+        const dur = (player && player.getDuration) ? player.getDuration() : 0;
+        const seekToSec = Math.max(0, Math.min(1, info.pct)) * dur;
+        try { if(player && typeof player.seekTo === 'function') player.seekTo(seekToSec, true); } catch(e){}
+        dragDisabledSwipe = false;
+      }
+
+      function updateThumbByPct(pct){
+        const progress = document.getElementById('progressBar');
+        const thumbEl = document.getElementById('seekThumb');
+        if(progress) progress.style.width = `${pct * 100}%`;
+        if(thumbEl) thumbEl.style.left = `${pct * 100}%`;
+        const dur = (player && player.getDuration) ? player.getDuration() : 0;
+        const t = dur * pct;
+        const curElem = document.getElementById('currentTime');
+        if(curElem) curElem.textContent = formatTime(t);
+      }
+
+      // mouse
+      if(seek){
+        seek.addEventListener('mousedown', onPointerDown);
+        window.addEventListener('mousemove', onPointerMove);
+        window.addEventListener('mouseup', onPointerUp);
+        // touch
+        seek.addEventListener('touchstart', onPointerDown, {passive:true});
+        window.addEventListener('touchmove', onPointerMove, {passive:true});
+        window.addEventListener('touchend', onPointerUp);
+        // keyboard accessibility: left/right keys on seek focus
+        seek.addEventListener('keydown', (e) => {
+          const dur = (player && player.getDuration) ? player.getDuration() : 0;
+          if(!dur) return;
+          let cur = player.getCurrentTime();
+          if(e.key === 'ArrowRight'){ cur = Math.min(dur, cur + 5); player.seekTo(cur, true); }
+          if(e.key === 'ArrowLeft'){ cur = Math.max(0, cur - 5); player.seekTo(cur, true); }
+        });
+      }
+    }
+
+    /* =================== Swipe gestures (autoplay) =================== */
+    // 
+
+    /* next/prev helpers */
+    function nextVideoAuto(){
+      if(filteredVideos.length === 0) return;
+      let idx = (currentVideoGlobalIndex >= 0) ? currentVideoGlobalIndex + 1 : 0;
+      if(idx >= filteredVideos.length) idx = 0;
+      currentVideoGlobalIndex = idx;
+      playByIndex(idx);
+      ensureVisiblePageForIndex(idx);
+    }
+    function prevVideoAuto(){
+      if(filteredVideos.length === 0) return;
+      let idx = (currentVideoGlobalIndex > 0) ? currentVideoGlobalIndex - 1 : (filteredVideos.length - 1);
+      currentVideoGlobalIndex = idx;
+      playByIndex(idx);
+      ensureVisiblePageForIndex(idx);
+    }
+    function ensureVisiblePageForIndex(idx){
+      const desiredPage = Math.floor(idx / itemsPerPage) + 1;
+      if(currentPage !== desiredPage){
+        currentPage = desiredPage;
+        renderKidsGrid();
+      }
+    }
+
+    /* =================== Controls show/hide auto-hide =================== */
+    let controlsHideTimer = null;
+    function showControls(){
+      const ctrl = document.getElementById('controls');
+      if(!ctrl) return;
+      ctrl.classList.remove('hidden');
+      // also show center play briefly
+      const centerPlay = document.getElementById('centerPlay');
+      if(centerPlay) centerPlay.classList.add('hidden'); // hide center when controls visible
+      if(controlsHideTimer) clearTimeout(controlsHideTimer);
+      controlsHideTimer = setTimeout(()=>{
+        // only hide controls when video is playing
+        if(player && typeof player.getPlayerState === 'function' && player.getPlayerState() === YT.PlayerState.PLAYING){
+          ctrl.classList.add('hidden');
+          if(centerPlay) centerPlay.classList.add('hidden');
+        }
+      }, 3000);
+    }
+    function hideControlsImmediate(){
+      const ctrl = document.getElementById('controls');
+      if(ctrl) ctrl.classList.add('hidden');
+      const centerPlay = document.getElementById('centerPlay');
+      if(centerPlay) centerPlay.classList.add('hidden');
+      if(controlsHideTimer) { clearTimeout(controlsHideTimer); controlsHideTimer = null; }
+    }
+
+    /* center play toggle (tap to pause/play) */
+    // function initControlBindings(){
+    //   const playBtn = document.getElementById('playBtn');
+    //   const center = document.getElementById('centerPlay');
+    //   const mute = document.getElementById('muteBtn');
+    //   const prev = document.getElementById('prevBtn');
+    //   const next = document.getElementById('nextBtn');
+    //   const fs = document.getElementById('fsBtn');
+
+    //   if(playBtn) playBtn.addEventListener('click', ()=>{ togglePlayPause(); showControls(); });
+    //   if(center) center.addEventListener('click', ()=>{ togglePlayPause(); showControls(); });
+    //   if(mute) mute.addEventListener('click', ()=>{ toggleMute(); showControls(); });
+    //   if(prev) prev.addEventListener('click', ()=>{ playPrev(); showControls(); });
+    //   if(next) next.addEventListener('click', ()=>{ playNext(); showControls(); });
+    //   if(fs) fs.addEventListener('click', ()=>{ toggleFullscreen(); showControls(); });
+
+    //   // show controls on pointer move / touch
+    //   const container = document.getElementById('playerContainer');
+    //   ['mousemove','touchstart','touchmove'].forEach(ev => {
+    //     container.addEventListener(ev, (e) => {
+    //       showControls();
+    //     }, {passive:true});
+    //   });
+
+    //   // hide controls when clicking outside or after inactivity
+    //   document.addEventListener('fullscreenchange', () => { showControls(); setTimeout(showControls, 250); });
+
+    //   // update UI periodically when not dragging
+    //   setInterval(() => {
+    //     if(!isDraggingSeek) updateProgressUI();
+    //     updateControlsState();
+    //   }, 800);
+
+    //   initSeekInteractions();
+    // }
+
+    function initControlBindings() {
+    const playBtn = document.getElementById('playBtn');
+    const center = document.getElementById('centerPlay');
+    const mute = document.getElementById('muteBtn');
+    const prev = document.getElementById('prevBtn');
+    const next = document.getElementById('nextBtn');
+    const fs = document.getElementById('fsBtn');
+    const container = document.getElementById('playerContainer');
+
+    if (playBtn) playBtn.addEventListener('click', () => { togglePlayPause(); showControls(); });
+    
+    // Center button now also toggles fullscreen on mobile if user taps
+    if (center) center.addEventListener('click', () => { 
+        togglePlayPause(); 
+        showControls(); 
+    });
+
+    if (mute) mute.addEventListener('click', () => { toggleMute(); showControls(); });
+    if (prev) prev.addEventListener('click', () => { playPrev(); showControls(); });
+    if (next) next.addEventListener('click', () => { playNext(); showControls(); });
+
+    // Fullscreen button uses the improved toggleFullscreen
+    if (fs) fs.addEventListener('click', () => { toggleFullscreen(); showControls(); });
+
+    // Show controls on pointer move / touch
+    ['mousemove', 'touchstart', 'touchmove'].forEach(ev => {
+        container.addEventListener(ev, () => { showControls(); }, { passive: true });
+    });
+
+    // Handle fullscreen change events
+    document.addEventListener('fullscreenchange', () => { showControls(); setTimeout(showControls, 250); });
+    document.addEventListener('webkitfullscreenchange', () => { showControls(); setTimeout(showControls, 250); });
+
+    // Periodic update of UI (progress bar, buttons)
+    setInterval(() => {
+        if (!isDraggingSeek) updateProgressUI();
+        updateControlsState();
+    }, 800);
+
+    // Initialize seek bar dragging / touch
+    initSeekInteractions();
+}
+
+
+    /* =================== Orientation / Fullscreen tweaks =================== */
+    function handleOrientationChange(){
+      const isLandscape = window.matchMedia("(orientation: landscape)").matches;
+      if(isLandscape){
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) { docEl.requestFullscreen().catch(()=>{}); }
+        else if (docEl.webkitRequestFullscreen) { docEl.webkitRequestFullscreen(); }
+        document.body.style.overflow = 'hidden';
+      } else {
+        if(document.fullscreenElement || document.webkitFullscreenElement){
+          try{ document.exitFullscreen?.(); } catch(e){}
+        }
+        document.body.style.overflow = 'auto';
+      }
+    }
+    window.addEventListener('orientationchange', () => { setTimeout(handleOrientationChange, 250); }, false);
+
+    /* =================== Utility: auto-play first when list ready =================== */
+    function autoPlayFirstIfNone(){
+      if(filteredVideos.length === 0) return;
+      if(currentVideoGlobalIndex === -1){
+        currentVideoGlobalIndex = 0;
+        playByIndex(0);
+      }
+    }
+
+    /* =================== Show shutdown view =================== */
+    function showShutdown(){
+      document.getElementById("kidsView").style.display = "none";
+      document.getElementById("shutdownScreen").style.display = "block";
+    }
+
+   
+
+
+    /* =================== Expose functions to global scope for inline calls =================== */
+    window.playByIndex = playByIndex;
+    window.nextPage = nextPage;
+    window.prevPage = prevPage;
+    window.toggleShorts = toggleShorts;
+    window.setTimeLimit = setTimeLimit;
+    window.shutdown = shutdown;
+    window.reactivate = reactivate;
+    window.addVideo = addVideo;
+    window.login = login;
+
+    /* =================== Load initial videos once and hook auto-play wrapper =================== */
+    db.ref('videos').once('value').then(snap => { data.videos = snap.val() || []; }).catch(()=>{});
+    const originalLoadKidsFromState = loadKidsFromState;
+    loadKidsFromState = function(){
+      originalLoadKidsFromState();
+      if(document.getElementById('kidsView').style.display === 'block'){
+        autoPlayFirstIfNone();
+      }
+    };
+
+  
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  initControlBindings();
+
+  // Hide login screen and admin panel initially
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("adminPanel").style.display = "none";
+  document.getElementById("shutdownScreen").style.display = "none";
+  document.getElementById("kidsView").style.display = "block";
+
+  // Auto-login as kid
+  login('kid');
+
+  // ----- Desktop: secret key code -----
+  const secretCode = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown'];
+  let secretIndex = 0;
+
+  window.addEventListener('keydown', (e) => {
+    const key = e.key;
+
+    // Secret code check
+    if(key === secretCode[secretIndex]){
+        secretIndex++;
+        if(secretIndex === secretCode.length){
+            login('admin');
+            document.getElementById("adminPanel").style.display = "block";
+            document.getElementById("kidsView").style.display = "none";
+            secretIndex = 0;
+        }
+    } else {
+        secretIndex = 0;
+    }
+
+    // Left/Right navigation for kids
+    if(document.getElementById('kidsView').style.display === 'block'){
+      if(key === 'ArrowLeft') prevVideoAuto();
+      else if(key === 'ArrowRight') nextVideoAuto();
+    }
+  });
+
+  // ----- Mobile: secret tap area -----
+  let tapCount = 0;
+  const requiredTaps = 5;
+  let tapTimeout = null;
+
+  const secretArea = document.createElement('div');
+  secretArea.style.position = 'fixed';
+  secretArea.style.top = '0';
+  secretArea.style.right = '0';
+  secretArea.style.width = '50px';
+  secretArea.style.height = '50px';
+  secretArea.style.zIndex = '9999';
+  // secretArea.style.background = 'rgba(255,0,0,0.1)'; // optional debug
+  document.body.appendChild(secretArea);
+
+  secretArea.addEventListener('touchstart', () => {
+      tapCount++;
+      if(tapCount === requiredTaps){
+          login('admin');
+          document.getElementById("adminPanel").style.display = "block";
+          document.getElementById("kidsView").style.display = "none";
+          tapCount = 0;
+          clearTimeout(tapTimeout);
+      } else {
+          clearTimeout(tapTimeout);
+          tapTimeout = setTimeout(() => { tapCount = 0; }, 1000); // reset if too slow
+      }
+  });
+});
+
+function updateAdState() {
+    if (!player || typeof player.getPlayerState !== 'function') return;
+    const state = player.getPlayerState();
+
+    const skipBtn = document.getElementById('skipAdBtn');
+    if (!skipBtn) return;
+
+    if (state === YT.PlayerState.AD_PLAYING) {
+        skipBtn.style.display = 'block'; // show skip button
+    } else {
+        skipBtn.style.display = 'none';
+    }
+}
+
+// Call every 500ms
+setInterval(updateAdState, 500);
+
+
+  </script>
+</body>
+</html>
